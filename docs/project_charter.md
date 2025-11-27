@@ -29,14 +29,19 @@
     - 実験ごとの成果物を個別管理する `output/` ディレクトリ構造。
     - 実験ワークフローのドキュメント化。
 
-### Phase 3: Agent Integration (次フェーズ)
+### Phase 3: Agent Integration (完了)
 - **目的**: LLMエージェントによる自律的な実験ループの実現。
-- **予定**:
-    - エージェント用インターフェース (`core/agent`) の実装。
-    - 「仮説立案 -> 実装 -> 実験 -> 検証 -> 報告」の自律ループ。
-    - 実験設定の外部化 (Hydra等)。
-    - 実験ログ・モデル管理 (MLflow/WandB)。
-    - MCP (Model Context Protocol) 等を活用したツール連携。
+- **成果**:
+    - エージェントコア実装 (`core/agent/`: base, tools, mcp_server)
+    - 実験管理システム (`core/experiment/`: runner, tracker)
+    - Hydra設定管理システム
+    - エージェントプロンプト (`prompts/`)
+    - Antigravity統合（MCPサーバー経由）
+    - 包括的なドキュメント
+    - エンドツーエンドテスト
+- **備考**:
+    - 外部LLM API呼び出しではなく、Antigravity（このAIアシスタント）を直接使用する方式を採用
+    - MCPサーバーを介してツールを提供
 
 ## 4. アーキテクチャ設計
 汎用性を高めるため、コアロジックとコンペ固有の実装を明確に分離します。

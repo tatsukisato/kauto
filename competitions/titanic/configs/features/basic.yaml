@@ -1,0 +1,16 @@
+name: basic
+features:
+  - Pclass
+  - Sex
+  - Age
+  - SibSp
+  - Parch
+  - Fare
+  - Embarked
+
+preprocessing:
+  fill_age_median: true
+  fill_fare_median: true
+  fill_embarked_mode: true
+  encode_sex: true
+  encode_embarked: true

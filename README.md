@@ -7,7 +7,7 @@
 
 - **Phase 1 (Environment & Baseline)**: ✅ 完了
 - **Phase 2 (Experiment Management)**: ✅ 完了
-- **Phase 3 (Agent Integration)**: 🚧 次フェーズ
+- **Phase 3 (Agent Integration)**: ✅ 完了
 
 詳細は [Project Charter](docs/project_charter.md) を参照してください。
 
@@ -18,6 +18,7 @@
 - 🧪 実験管理構造 (src/experiments分離)
 - 🤖 特徴量・モデルの基底クラス
 - 📤 Kaggle API経由の自動提出
+- 🎯 **Antigravity統合による自律実験ループ**
 
 ## Prerequisites
 
@@ -77,7 +78,28 @@ uv run python core/utils/submitter.py titanic \
   "Baseline submission via kauto"
 ```
 
-### 3. コンペ情報の再取得
+### 3. Antigravity エージェントの使用 ⭐ 推奨
+
+Antigravity（このAIアシスタント）を使用して自律的に実験を実行できます。
+
+```
+# 1. コンペティションを設定
+コンペティションを"titanic"に設定してください。
+
+# 2. 現状確認
+以下を確認してください：
+- docs/README.md の内容
+- 最近の実験履歴（5件）
+- 現在のベストスコア
+
+# 3. 仮説生成と実験実行
+データと実験履歴を分析し、改善の仮説を提案してください。
+その後、最も有望な仮説に基づいて新しい実験を実装・実行してください。
+```
+
+詳細は [Antigravity Agent Guide](docs/antigravity_agent_guide.md) を参照してください。
+
+### 4. コンペ情報の再取得
 OverviewやDataページの情報を再取得してドキュメントを更新したい場合は、以下のユーティリティを使用します。
 ```bash
 uv run python core/utils/kaggle_page_fetcher.py titanic

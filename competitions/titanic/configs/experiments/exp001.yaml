@@ -1,0 +1,8 @@
+# defaults list
+defaults:
+  - /config
+  - _self_
+
+experiment:
+  name: exp001_baseline
+  description: "Baseline experiment with basic features and default LGBM"
