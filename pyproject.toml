@@ -1,0 +1,20 @@
+[project]
+name = "kauto"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.14.2",
+    "ipykernel>=7.1.0",
+    "kaggle==1.6.17",
+    "lightgbm>=4.6.0",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.5",
+    "pandas>=2.3.3",
+    "playwright>=1.56.0",
+    "python-dotenv>=1.2.1",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "urllib3<2.0",
+]
