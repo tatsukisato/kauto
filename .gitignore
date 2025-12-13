@@ -1,13 +1,69 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.pyo
+*.pyc
 build/
 dist/
 wheels/
 *.egg-info
+*.egg
 
 # Virtual environments
-.venv
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
 
 # Experiment outputs
 output/
+!output/.gitkeep
+
+# Data files (large files should not be committed)
+raw/
+data/raw/images/
+data/raw/*.zip
+data/raw/*.tar.gz
+data/processed/
+*.csv
+!data/raw/sample_submission.csv
+!data/raw/train_meta.csv
+!data/raw/test_meta.csv
+!data/raw/test_top_meta.csv
+
+# Model files
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.ckpt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cache
+.cache/
+*.cache
