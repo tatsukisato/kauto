@@ -7,7 +7,7 @@ from datetime import datetime
 import pandas as pd
 
 
-def setup_directories(base_dir: str = ".") -> dict:
+def setup_directories(base_dir: str = ".", data_dir: str = ".") -> dict:
     """Setup directory structure
     
     Args:
@@ -19,9 +19,9 @@ def setup_directories(base_dir: str = ".") -> dict:
     base_path = Path(base_dir)
     
     dirs = {
-        'data': base_path / 'data',
-        'raw': base_path / 'data' / 'raw',
-        'processed': base_path / 'data' / 'processed',
+        'data': data_dir / 'data',
+        'raw': data_dir / 'data' / 'raw',
+        'processed': data_dir / 'data' / 'processed',
         'output': base_path / 'output',
         'models': base_path / 'output' / 'models',
         'submissions': base_path / 'submissions',
