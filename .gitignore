@@ -28,7 +28,7 @@ raw/
 data/raw/images/
 data/raw/*.zip
 data/raw/*.tar.gz
-data/processed/
+*.jpg
 *.csv
 !data/raw/sample_submission.csv
 !data/raw/train_meta.csv

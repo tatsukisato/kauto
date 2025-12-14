@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+.env
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# VS Code
+.vscode/
+
+# Mac
+.DS_Store
+
+# Data
+data/raw/
+data/processed/
+
+# Output artifacts
+output/
+submissions/
+
+# Models
+*.pth
+*.pkl
+*.ckpt
+*.joblib
+
+# Logs
+logs/
+*.log
+
+# LightGBM
+*.mod
