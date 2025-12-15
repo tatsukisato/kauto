@@ -167,15 +167,12 @@ python experiments/exp001_baseline.py
     - ランダムクロップや、選手bbox以外の領域を切り抜いて作成
 2.  **信頼度閾値 (Confidence Thresholding)**:
     - 予測確率(Softmax)の最大値が低い場合(例: < 0.5)はUnknownとする
-3.  **エントロピー閾値**:
-    - 予測分布のエントロピーが高い(迷っている)場合はUnknownとする
-4.  **異常検知 (OOD Detection)**:
-    - 選手クラスの分布から外れているものを検出する専用ロジック
-5.  **二値分類モデルの併用**:
-    - 「選手か否か」を判定するモデルを前段に挟む
 
-**次の一手**:
-- Exp003以降では、まずValidation戦略を修正し、次にBackgroundクラスの導入を試みる
+**次の一手 (Validation戦略の確立)**:
+- **Exp004**: Stratified Group K-Fold (Group = quarter) を採用
+    - `quarter` (例: Q1-000) 単位でグルーピングすることで、同一シーンのフレームがTrain/Valに混ざる「Temporal Leakage」を防ぐ
+    - 同時にStratifiedを行うことで、各Foldでの選手クラス分布の偏りを最小限に抑える
+    - これにより、未知のシーンに対する汎化性能を正しく評価できるようにする
 
 ## 次回に向けて
 

@@ -17,11 +17,12 @@ def setup_directories(base_dir: str = ".", data_dir: str = ".") -> dict:
         Dictionary with directory paths
     """
     base_path = Path(base_dir)
+    data_path = Path(data_dir)
     
     dirs = {
-        'data': data_dir / 'data',
-        'raw': data_dir / 'data' / 'raw',
-        'processed': data_dir / 'data' / 'processed',
+        'data': data_path / 'data',
+        'raw': data_path / 'data' / 'raw',
+        'processed': data_path / 'data' / 'processed',
         'output': base_path / 'output',
         'models': base_path / 'output' / 'models',
         'submissions': base_path / 'submissions',
