@@ -19,6 +19,7 @@ __pycache__/
 # Data
 data/raw/
 data/processed/
+*.zip
 
 # Output artifacts
 output/

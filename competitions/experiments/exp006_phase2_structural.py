@@ -16,7 +16,7 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
-from sklearn.metrics import f1_score, confusion_matrix, precision_recall_fscore_support
+from sklearn.metrics import f1_score
 from sklearn.model_selection import StratifiedGroupKFold
 import numpy as np
 import cv2
@@ -126,7 +126,7 @@ def main():
     crops_dir = dirs['processed'] / 'crops_train'
     current_crops = list(crops_dir.glob("*.jpg")) if crops_dir.exists() else []
     if len(current_crops) < len(train_meta) * 0.9: 
-        print(f"Generating player crops...")
+        print("Generating player crops...")
         crop_and_save_images(train_meta, dirs['raw'], crops_dir, mode='train')
     
     # 3. Check/Generate Background Crops
@@ -179,9 +179,10 @@ def main():
     model_dir = exp_output_dir / 'models'
     model_dir.mkdir(exist_ok=True)
     
-    groups = full_train_df['quarter']
-    X = full_train_df.index
-    y = full_train_df['label_id'].astype(str)
+    # Convert to numpy arrays to satisfy split() type expectations
+    groups = full_train_df['quarter'].to_numpy()
+    X = full_train_df.index.to_numpy()
+    y = full_train_df['label_id'].astype(str).to_numpy()
     
     train_idx, val_idx = next(sgkf.split(X, y, groups=groups))
     
@@ -289,7 +290,7 @@ def main():
         print(f"  Val Loss: {val_loss:.4f}")
         print(f"  [Overall] F1: {macro_f1_all:.4f}")
         print(f"  [Player ] F1: {macro_f1_player:.4f}")
-        print(f"  [BG Stats] Recall: {bg_recall:.4f}, Precision: {bg_fp:.4f} (FP)")
+        print(f"  [BG Stats] Recall: {bg_recall:.4f}, Precision: {bg_precision:.4f} (FP)")
         
         target_metric = macro_f1_all
         
