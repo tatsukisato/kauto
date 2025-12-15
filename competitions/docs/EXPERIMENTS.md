@@ -62,6 +62,71 @@ Baseline LightGBM model with bbox position features only
 
 ---
 
+## exp004_stratified_group_validation
+
+**実施日時**: 2025-12-15 05:29
+
+### 概要
+Validation戦略の改善。Class Distribution MismatchとTemporal Leakageを同時に解消するため、`quarter`をグループとしたStratified Group K-Fold検証を実施。
+
+### 設定
+- **モデル**: SimpleCNN (ResNet18 backbone, frozen)
+- **データ処理**: 
+    - 完全画像ではなくCrop画像(224x224)を使用
+    - データはQ1, Q2を使用
+- **バリデーション**: Stratified Group K-Fold (Group=quarter, Hold-out 20%)
+    - Train: 19880, Val: 5040
+- **パラメータ**:
+  ```python
+  batch_size: 256
+  lr: 4e-3
+  optimizer: Adam
+  scheduler: ReduceLROnPlateau
+  ```
+
+### 結果
+- **Validation Macro F1**: 0.6604
+- **Public LB**: 0.5434
+- **学習サンプル数**: 19,880
+- **バリデーションサンプル数**: 5,040
+
+### 観察・学び
+1.  **CVスコアの高騰**: 0.66という高いスコアが出たが、Public LB (0.54) との乖離が大きい。
+2.  **原因**: テストデータの「ゴミbbox（未学習の背景など）」に対して、無理やり0-10の選手クラスを割り当てているため、実環境（テスト）ではスコアが下がる。
+3.  **改善**: Validation戦略自体は正しいが、タスク設定（11クラス分類）が実態に即していない。
+
+---
+
+## exp005_background_aug
+
+**実施日時**: 2025-12-15 16:10
+
+### 概要
+テストデータの特性（ゴミbbox、不明な選手）に合わせ、**Backgroundクラス(Label -1)** を導入。学習データから生成した「背景」「位置ずれbbox」を負例として学習させることで、頑健性を向上させる。
+
+### 設定
+- **モデル**: SimpleCNN (ResNet18 backbone, frozen) - **Output 12 classes**
+- **データ拡張 (強化)**:
+    - RandomResizedCrop (scale 0.6-1.0)
+    - GaussianBlur
+    - ColorJitter (stronger)
+- **Background生成**:
+    - 学習画像の正解bbox以外の領域をクロップ
+    - 正解bboxをずらしてIoU < 0.5 としたものをクロップ
+- **バリデーション**: Stratified Group K-Fold (Group=quarter, Hold-out 20%)
+
+### 結果
+- **Validation Macro F1**: 0.5390 (↓ from 0.6604)
+- **Public LB**: 0.5043 (↓ from 0.5434)
+- **Gap**: 0.0347 (以前は 0.117)
+
+### 観察・学び
+1.  **スコアの下落**: タスクが「選手識別」から「選手識別 + ゴミ検知」に難化したため、見かけのスコアは低下。
+2.  **信頼性の向上**: CVとLBの差が縮まり、ローカルでの評価がLBと連動しやすくなった（CV戦略として成功）。
+3.  **今後の方向**: このValidation環境をベースに、モデル自体の精度向上（Backbone変更、解像度アップ、Head改良など）を目指すフェーズに入った。
+
+---
+
 ## テンプレート（次回実験用）
 
 ```markdown
