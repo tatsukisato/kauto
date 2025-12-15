@@ -5,6 +5,9 @@ import pandas as pd
 from pathlib import Path
 from typing import Tuple
 import numpy as np
+import cv2
+import torch
+from torch.utils.data import Dataset
 
 
 class AtmaCup22Dataset:
@@ -88,3 +91,45 @@ class AtmaCup22Dataset:
         X = self.create_features(self.test_meta)
         
         return X
+
+class MixedImageDataset(Dataset):
+    """Dataset combining player crops and background samples.
+
+    Expects meta_df to contain 'label_id' and optionally 'original_index' or 'file_name'
+    for background rows. Background label_id == -1 is mapped to class 11.
+    """
+    def __init__(self, meta_df: pd.DataFrame, crop_dirs: dict, transform=None, mode: str = "train"):
+        self.meta_df = meta_df.reset_index(drop=True)
+        self.crop_dirs = crop_dirs
+        self.transform = transform
+        self.mode = mode
+
+    def __len__(self) -> int:
+        return len(self.meta_df)
+
+    def __getitem__(self, idx: int):
+        row = self.meta_df.iloc[idx]
+        label = int(row["label_id"])
+
+        if label == -1:
+            fname = row.get("file_name", f"bg_{row.name}.jpg")
+            if pd.isna(fname):
+                fname = f"bg_{row.name}.jpg"
+            img_path = Path(self.crop_dirs["bg"]) / fname
+        else:
+            idx_name = row.get("original_index", row.name)
+            img_path = Path(self.crop_dirs["train"]) / f"{idx_name}.jpg"
+
+        img = cv2.imread(str(img_path))
+        if img is None:
+            img = np.zeros((224, 224, 3), dtype=np.uint8)
+        else:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.mode in ("train", "validation"):
+            target = 11 if label == -1 else label
+            return img, torch.tensor(target, dtype=torch.long)
+        return img

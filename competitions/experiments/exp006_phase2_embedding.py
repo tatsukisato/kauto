@@ -35,58 +35,18 @@ else:
     sys.path.append(str(ROOT_DIR))
 
 try:
-    from src.utils import setup_directories, save_results, create_submission, print_experiment_info, crop_and_save_images
-    from src.dataset import AtmaCup22Dataset
+    from src.utils import (
+        setup_directories,
+        save_results,
+        create_submission,
+        print_experiment_info,
+        crop_and_save_images,
+    )
+    from src.dataset import AtmaCup22Dataset, MixedImageDataset
     from src.models import AtmaCupModel
     from src.generate_background import generate_background_samples
 except ImportError:
     print("Warning: Custom modules not found.")
-
-# Dataset Code (Same as Phase 1)
-class MixedImageDataset(Dataset):
-    def __init__(self, meta_df, crop_dirs, transform=None, mode='train'):
-        self.meta_df = meta_df.reset_index(drop=True)
-        self.crop_dirs = crop_dirs
-        self.transform = transform
-        self.mode = mode
-
-    def __len__(self):
-        return len(self.meta_df)
-
-    def __getitem__(self, idx):
-        row = self.meta_df.iloc[idx]
-        label = int(row['label_id'])
-        
-        if label not in range(-1, 11):
-            raise ValueError(f"Unexpected label_id: {label} at index {idx}")
-
-        if label == -1:
-            if 'file_name' not in row:
-                 fname = f"bg_{row.name}.jpg" 
-            else:
-                 fname = row['file_name']
-            if pd.isna(fname):
-                 fname = f"bg_{row.name}.jpg"
-
-            img_path = self.crop_dirs['bg'] / fname
-        else:
-            idx_name = row.get('original_index', row.name)
-            img_path = self.crop_dirs['train'] / f"{idx_name}.jpg"
-
-        img = cv2.imread(str(img_path))
-        if img is None:
-            img = np.zeros((224, 224, 3), dtype=np.uint8)
-        else:
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            
-        if self.transform:
-            img = self.transform(img)
-            
-        if self.mode in ['train', 'validation']:
-            target = 11 if label == -1 else label
-            return img, torch.tensor(target, dtype=torch.long)
-        else:
-            return img
 
 def main():
     exp_name = "exp006_phase2_embedding"
@@ -179,9 +139,20 @@ def main():
     train_dataset = MixedImageDataset(train_df_fold, crop_dirs, transform=train_transform, mode='train')
     val_dataset = MixedImageDataset(val_df_fold, crop_dirs, transform=val_transform, mode='validation')
     
-    batch_size = 32 if DEBUG else 64
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=2, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=2)
+    batch_size = 32 if DEBUG else 256
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+    )
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
+    )
     
     # 6. Model (12 Classes) - EMBEDDING HEAD ENABLED
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
@@ -198,7 +169,7 @@ def main():
     model.to(device)
     
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=4e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=2)
     scaler = GradScaler(enabled=use_amp)
     
