@@ -45,6 +45,8 @@ try:
     from src.dataset import AtmaCup22Dataset, MixedImageDataset
     from src.models import AtmaCupModel
     from src.generate_background import generate_background_samples
+    from src.image_dataset import ImageDataset as StandardImageDataset  # 追加: test 用 Dataset
+    from src.metrics import compute_evaluation_metrics
 except ImportError:
     print("Warning: Custom modules not found.")
 
@@ -54,6 +56,10 @@ def main():
     
     DEBUG = not IS_KAGGLE
     EPOCHS = 2 if DEBUG else 12 
+    # ArcFace toggle: set True to enable ArcFace head/softmax-margin behavior.
+    # 注意: ArcFace 層は内部で F.normalize を行い、s=30.0, m=0.5 を想定しています。
+    # ArcFace に渡す入力は「L2 正規化 前 の embedding」を渡す（モデル内部で正規化される前提）。
+    USE_ARCFACE = False
     
     # Setup Directories
     dirs = setup_directories(
@@ -82,7 +88,7 @@ def main():
     # 2. Check/Generate Player Crops
     crops_dir = dirs['processed'] / 'crops_train'
     if not list(crops_dir.glob("*.jpg")):
-         print(f"Generating player crops...")
+         print("Generating player crops...")
          crop_and_save_images(train_meta, dirs['raw'], crops_dir, mode='train')
     
     # 3. Check/Generate Background Crops
@@ -160,15 +166,16 @@ def main():
     print(f"Using device: {device}, AMP: {use_amp}")
     
     model = AtmaCupModel(
-        num_classes=12, 
-        pretrained=True, 
+        num_classes=12,
+        pretrained=True,
         freeze_backbone=True,
-        use_arcface=False,          # Standard softmax/linear
-        use_embedding_head=True     # [MODIFIED] Enable BN->FC->BN
+        use_arcface=USE_ARCFACE,    # フラグに従う
+        use_embedding_head=True,    # BN->FC->BN 構造を確認
     )
     model.to(device)
     
     criterion = nn.CrossEntropyLoss()
+    # 学習率を大きすぎないように設定（1e-3 -> 3e-4 を推奨）
     optimizer = optim.Adam(model.parameters(), lr=4e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=2)
     scaler = GradScaler(enabled=use_amp)
@@ -186,8 +193,14 @@ def main():
             
             optimizer.zero_grad(set_to_none=True)
             with autocast(device_type="cuda", enabled=use_amp):
-                # Standard classification, but internally passes through BN->FC->BN first
-                outputs = model(images)
+                # If ArcFace is enabled, pass targets during forward so ArcFace layer
+                # can apply margin inside (model is expected to accept targets=labels).
+                # Important: pass embedding BEFORE external normalization; model's ArcFace
+                # layer will call F.normalize internally (s=30.0, m=0.5 assumed).
+                if USE_ARCFACE:
+                    outputs = model(images, targets=labels)
+                else:
+                    outputs = model(images)
                 loss = criterion(outputs, labels)
             
             scaler.scale(loss).backward()
@@ -209,7 +222,11 @@ def main():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
                 with autocast(device_type="cuda", enabled=use_amp):
-                    outputs = model(images)
+                    # In eval, do not pass targets so model returns inference scores
+                    if USE_ARCFACE:
+                        outputs = model(images)  # returns scaled cosine (inference)
+                    else:
+                        outputs = model(images)
                     loss = criterion(outputs, labels)
                 val_loss += loss.item() * images.size(0)
                 
@@ -219,14 +236,16 @@ def main():
         
         val_loss /= len(val_dataset)
         
-        # Validation Metrics
+        # Validation Metrics (delegated to src.metrics)
         val_labels = np.array(val_labels)
         val_preds = np.array(val_preds)
-        
-        macro_f1_all = f1_score(val_labels, val_preds, average='macro')
-        
+        metrics = compute_evaluation_metrics(val_labels, val_preds, bg_label=11)
         print(f"  Val Loss: {val_loss:.4f}")
-        print(f"  [Overall] F1: {macro_f1_all:.4f}")
+        print(f"  [Overall] F1: {metrics['macro_f1_all']:.4f}")
+        print(f"  [Player ] F1: {metrics['macro_f1_player']:.4f}")
+        print(f"  [BG Stats] Recall: {metrics['bg_recall']:.4f}, Precision: {metrics['bg_precision']:.4f} (FP={metrics['bg_fp']})")
+        macro_f1_all = metrics["macro_f1_all"]
+        macro_f1_player = metrics["macro_f1_player"]
 
         if macro_f1_all > best_score:
             best_score = macro_f1_all
@@ -235,7 +254,32 @@ def main():
         scheduler.step(macro_f1_all)
         
     print(f"Best Val F1 (Overall): {best_score:.4f}")
-    save_results({'val_score_overall': best_score}, str(exp_output_dir), exp_name)
+    # --- Inference on Test and create submission ---
+    try:
+        if best_model_path.exists():
+            model.load_state_dict(torch.load(best_model_path, map_location=device))
+            model.eval()
+            test_dataset = StandardImageDataset(test_meta, str(dirs['raw']), transform=val_transform, mode='test')
+            test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+            final_test_preds = []
+            with torch.no_grad():
+                for images in test_loader:
+                    images = images.to(device)
+                    with autocast(device_type="cuda", enabled=use_amp):
+                        outputs = model(images)
+                    preds = torch.argmax(outputs, dim=1).cpu().numpy()
+                    preds = np.where(preds == 11, -1, preds)  # map BG class back to -1
+                    final_test_preds.extend(preds)
+
+            sub_path = dirs['submissions'] / f"submission_{exp_name}.csv"
+            create_submission(final_test_preds, str(sub_path), test_meta)
+            print(f"Saved submission: {sub_path}")
+        else:
+            print("No best model found for inference; skipping test inference.")
+    except Exception as e:
+        print(f"Warning: Test inference failed: {e}")
+
+    save_results({'val_score_overall': best_score, 'val_score_player': macro_f1_player}, str(exp_output_dir), exp_name)
 
 if __name__ == "__main__":
     main()

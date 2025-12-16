@@ -45,6 +45,7 @@ try:
     from src.models import AtmaCupModel
     from src.generate_background import generate_background_samples
     from src.utils_ema import ModelEMA  # [MODIFIED] Import EMA
+    from src.metrics import compute_evaluation_metrics
 except ImportError:
     print("Warning: Custom modules not found.")
 
@@ -63,14 +64,8 @@ def validate(model, val_loader, device, use_amp, criterion, desc="Val"):
             val_labels.extend(labels.cpu().numpy())
     
     val_loss /= len(val_loader.dataset)
-    f1 = f1_score(val_labels, val_preds, average='macro')
-    # Player F1
-    vl_np = np.array(val_labels)
-    vp_np = np.array(val_preds)
-    player_mask = vl_np != 11
-    f1_player = f1_score(vl_np[player_mask], vp_np[player_mask], average='macro', labels=list(range(11))) if np.sum(player_mask) > 0 else 0.0
-    
-    return val_loss, f1, f1_player
+    metrics = compute_evaluation_metrics(val_labels, val_preds, bg_label=11)
+    return val_loss, metrics
 
 def main():
     exp_name = "exp006_phase2_ema"
@@ -190,20 +185,20 @@ def main():
         train_loss /= len(train_loader.dataset)
         
         # Validate Normal
-        val_loss, f1, f1_player = validate(model, val_loader, device, use_amp, criterion)
+        val_loss, metrics = validate(model, val_loader, device, use_amp, criterion)
         # Validate EMA
-        val_loss_ema, f1_ema, f1_player_ema = validate(ema.module, val_loader, device, use_amp, criterion, desc="Val(EMA)")
+        val_loss_ema, metrics_ema = validate(ema.module, val_loader, device, use_amp, criterion, desc="Val(EMA)")
         
         print(f"  Train Loss: {train_loss:.4f}")
-        print(f"  [Normal] Loss: {val_loss:.4f} | F1: {f1:.4f} | Player F1: {f1_player:.4f}")
-        print(f"  [EMA   ] Loss: {val_loss_ema:.4f} | F1: {f1_ema:.4f} | Player F1: {f1_player_ema:.4f}")
+        print(f"  [Normal] Loss: {val_loss:.4f} | F1: {metrics['macro_f1_all']:.4f} | Player F1: {metrics['macro_f1_player']:.4f}")
+        print(f"  [EMA   ] Loss: {val_loss_ema:.4f} | F1: {metrics_ema['macro_f1_all']:.4f} | Player F1: {metrics_ema['macro_f1_player']:.4f}")
         
         # Use EMA score for checkpoint
-        if f1_ema > best_score_ema:
-            best_score_ema = f1_ema
+        if metrics_ema["macro_f1_all"] > best_score_ema:
+            best_score_ema = metrics_ema["macro_f1_all"]
             torch.save(ema.module.state_dict(), best_model_path)
             
-        scheduler.step(f1_ema)
+        scheduler.step(metrics_ema["macro_f1_all"])
 
     print(f"Best Val F1 (EMA): {best_score_ema:.4f}")
     save_results({'val_score_ema': best_score_ema}, str(exp_output_dir), exp_name)

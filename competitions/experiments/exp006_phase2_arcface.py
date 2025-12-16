@@ -39,10 +39,12 @@ try:
         save_results,
         print_experiment_info,
         crop_and_save_images,
+        create_submission,  # 追加: submission helper
     )
     from src.dataset import AtmaCup22Dataset, MixedImageDataset
     from src.models import AtmaCupModel
     from src.generate_background import generate_background_samples
+    from src.image_dataset import ImageDataset as StandardImageDataset  # 追加: test 用 dataset
 except ImportError:
     print("Warning: Custom modules not found.")
 
@@ -246,6 +248,32 @@ def main():
         scheduler.step(macro_f1_all)
         
     print(f"Best Val F1 (Overall): {best_score:.4f}")
+    
+    # --- Inference on Test (load best model, predict, create submission) ---
+    try:
+        if best_model_path.exists():
+            model.load_state_dict(torch.load(best_model_path, map_location=device))
+            model.eval()
+            test_dataset = StandardImageDataset(test_meta, str(dirs['raw']), transform=val_transform, mode='test')
+            test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4)
+            final_test_preds = []
+            with torch.no_grad():
+                for images in test_loader:
+                    images = images.to(device)
+                    with autocast(device_type="cuda", enabled=use_amp):
+                        outputs = model(images)
+                    preds = torch.argmax(outputs, dim=1).cpu().numpy()
+                    preds = np.where(preds == 11, -1, preds)  # map BG class back to -1
+                    final_test_preds.extend(preds)
+
+            sub_path = dirs['submissions'] / f"submission_{exp_name}.csv"
+            create_submission(final_test_preds, str(sub_path), test_meta)
+            print(f"Saved submission: {sub_path}")
+        else:
+            print("No best model found for inference; skipping test inference.")
+    except Exception as e:
+        print(f"Warning: Test inference failed: {e}")
+    
     save_results({'val_score_overall': best_score}, str(exp_output_dir), exp_name)
 
 if __name__ == "__main__":
