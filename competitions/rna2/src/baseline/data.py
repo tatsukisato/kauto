@@ -34,7 +34,7 @@ def load_labels(path: str) -> pd.DataFrame:
     The function is tolerant: if `target_id` is missing but `ID` exists, it derives
     `target_id` by splitting `ID` on the first underscore.
     """
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, low_memory=False)
     if 'target_id' not in df.columns:
         if 'ID' in df.columns:
             df['target_id'] = df['ID'].astype(str).apply(lambda x: x.split('_')[0])
