@@ -1,0 +1,6 @@
+# Ignore data directory
+stanford-rna-3d-folding-2/
+
+# Ignore output files
+*.tsv
+*.csv
