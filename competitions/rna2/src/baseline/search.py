@@ -3,23 +3,30 @@ from typing import Tuple
 import math
 
 try:
-    from Bio import pairwise2
+    from Bio.Align import PairwiseAligner
 except Exception:  # pragma: no cover - allow missing Biopython until runtime
-    pairwise2 = None
+    PairwiseAligner = None
+
 
 
 def seq_identity(a: str, b: str) -> float:
     """Compute simple normalized identity using globalxx alignment.
 
-    Returns matches / max(len(a), len(b)). Requires Biopython `pairwise2`.
+    Returns matches / max(len(a), len(b)). Requires Biopython `PairwiseAligner`.
     """
-    if pairwise2 is None:
-        # fallback: simple ungapped identity on prefix
-        matches = sum(1 for x, y in zip(a, b) if x == y)
-        return matches / max(1, max(len(a), len(b)))
-    aln = pairwise2.align.globalxx(a, b, one_alignment_only=True)
-    if not aln:
-        return 0.0
-    seqA, seqB, score, start, end = aln[0]
-    matches = sum(1 for x, y in zip(seqA, seqB) if x == y)
-    return matches / max(1, max(len(a), len(b)))
+    # Prefer PairwiseAligner when available (faster, maintained API)
+    if PairwiseAligner is None:
+        raise RuntimeError("Bio.Align.PairwiseAligner is required for seq_identity; please install a recent Biopython.")
+    if PairwiseAligner is not None:
+        try:
+            aligner = PairwiseAligner()
+            aligner.match_score = 1.0
+            aligner.mismatch_score = 0.0
+            aligner.open_gap_score = 0.0
+            aligner.extend_gap_score = 0.0
+            score = aligner.score(a, b)
+            return float(score) / max(1, max(len(a), len(b)))
+        except Exception:
+            pass
+    # should not reach here; PairwiseAligner succeeded above
+    return 0.0
