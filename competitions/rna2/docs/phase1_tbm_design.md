@@ -96,3 +96,44 @@ return np.array(out)
 - Notebook セル構成への落とし込み
 - TemplateRepository の雛形実装（Python）
 - Submission builder の実装例
+
+## 実装確認と差分コメント
+
+以下は現行実装（`competitions/rna2/src/baseline` 下の実装）を確認した結果です。設計書との相違点・未実装点・今後の実装候補を記載します。
+
+- **実装済み（主な項目）**:
+  - `TemplateRepository.fit` / `get` / `find_best` が実装されており、テンプレートは in-memory に保持される（`template_model.py`）。
+  - 長さフィルタと k-mer プレフィルタ（`prefilter_k`, `prefilter_top_n`）が導入されており、線形スキャン→短縮→スコア計算の流れになっている。
+  - 配列類似度スコアは Biopython の `PairwiseAligner` を用いる `seq_identity` が実装されている（`search.py`）。
+  - 座標転写は `predict.py` のワーカ `_worker_process_query` 内で実装されており、`PairwiseAligner` の aligned blocks を使ってテンプレの座標をマップしている。マップされない箇所は NaN として出力される。
+  - SubmissionBuilder 相当の処理は `generate_submission_parallel` に実装されており、ID,resname,resid,x_1,y_1,z_1... の DataFrame を生成する。
+
+- **ドキュメントと異なる点 / 注意点**:
+  - 設計書では Biopython の `pairwise2.globalxx` を想定しているが、実装は `PairwiseAligner`（新しい API）を使用している。どちらでも良いが依存関係と説明を合わせる必要がある。
+  - 設計に挙げた `TemplateRepository.save()/load()` は実装されていない（現状はメモリ保持のみ）。永続化が必要なら追加実装を行うべき。
+  - ワーカ内での長さ比閾値（length ratio）が `_worker_process_query` にて `0.7/1.3` とハードコーディングされている。`TemplateRepository.length_ratio_min/max` をワーカに渡す設計に変更することを推奨する（現在 find_best では repo 側の値を利用するが、並列ワーカ側は利用していない）。
+  - `TemplateRepository.fit` は座標列の自動検出（`x_1,y_1,z_1` または `x_{i}` パターン）や `-1e+18` を NaN に置換する前処理を行っている。データ前処理の仕様（欠損値の扱い）を設計書に明記しておくと良い。
+  - `pyproject.toml` に `biopython` が明示されていないように見える（現状 `bio` という依存があるが `Bio.Align.PairwiseAligner` を提供するのは `biopython`）。ランタイムで `PairwiseAligner` が無いとエラーになるため、依存関係に `biopython` を追加することを推奨する。
+  - `generate_submission_parallel` は Unix 系で `fork` を利用するが、Windows では挙動が異なる点に注意（ドキュメントでマルチプロセスの挙動差を注記すると親切）。
+
+- **未実装 / 改善提案（今後の実装ポイント）**:
+  - `TemplateRepository.save()` / `load()` の追加（pickle / CSV / ディレクトリ構造など、運用要件に合わせて選択）。
+  - ワーカ初期化時に `length_ratio_min` / `length_ratio_max` を渡す（`initargs` に追加し、ハードコーディングを排除）。
+  - 依存関係チェック時にわかりやすいエラーメッセージを出す（Biopython 未導入時の案内）。
+  - `allow_partial` / `fill_gaps` / `use_kabsch` のフラグを将来的に有効化できるよう、`generate_submission` と `TemplateRepository` の API で受け渡し可能にする。
+  - 転写アルゴリズムを示す擬似コードを `PairwiseAligner` の `aligned` ブロック版に更新する（より実装に近い説明にする）。
+
+- **短い擬似コード（PairwiseAligner でのマッピング例）**:
+```python
+aligner = PairwiseAligner()
+alns = aligner.align(query_seq, tpl_seq)
+aln = next(iter(alns))
+q_blocks, t_blocks = aln.aligned
+for (qs, qe), (ts, te) in zip(q_blocks, t_blocks):
+    for offset in range(qe-qs):
+        q_idx = qs + offset
+        t_idx = ts + offset
+        # t_idx に対応するテンプレ座標をコピー
+```
+
+上記の差分と TODO をドキュメントに反映しました。実装側で修正を希望する箇所があれば指示ください。
