@@ -1,6 +1,7 @@
 {
   "python.analysis.extraPaths": [
-    "./competitions/rna2/src"
+    "./competitions/rna2/src",
+    "./competitions/rna2/scripts"
   ],
   "python.envFile": "${workspaceFolder}/.env",
   "python.analysis.autoSearchPaths": true,
