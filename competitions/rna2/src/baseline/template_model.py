@@ -1,6 +1,7 @@
 """TemplateRepository: store templates and find best matches for query sequences."""
 from typing import Callable, Dict, List, Tuple, Any
 import pandas as pd
+import numpy as np
 
 
 class TemplateRepository:
@@ -12,6 +13,9 @@ class TemplateRepository:
     def __init__(self, length_ratio_min: float = 0.7, length_ratio_max: float = 1.3):
         self.length_ratio_min = length_ratio_min
         self.length_ratio_max = length_ratio_max
+        # prefilter settings
+        self.prefilter_k = 4
+        self.prefilter_top_n = 200
         self.templates: Dict[str, Dict[str, Any]] = {}
 
     def fit(self, seq_df: pd.DataFrame, labels_df: pd.DataFrame) -> None:
@@ -33,8 +37,58 @@ class TemplateRepository:
             tid = str(row['target_id'])
             seq = str(row['sequence'])
             coords = grouped.get(tid, pd.DataFrame())
-            # store even if coords empty; downstream will handle missing coords
-            self.templates[tid] = {'seq': seq, 'coords': coords}
+            entry: Dict[str, Any] = {'seq': seq, 'coords': coords}
+            # Precompute coordinate arrays for faster access in prediction
+            if not coords.empty:
+                # find coordinate triplet columns
+                coord_cols = None
+                if {'x_1', 'y_1', 'z_1'}.issubset(coords.columns):
+                    coord_cols = ('x_1', 'y_1', 'z_1')
+                else:
+                    trip = [c for c in coords.columns if c.startswith('x_')]
+                    if trip:
+                        idx = trip[0].split('_')[1]
+                        coord_cols = (f'x_{idx}', f'y_{idx}', f'z_{idx}')
+
+                if coord_cols is not None:
+                    try:
+                        arr = coords.loc[:, list(coord_cols)].replace({-1e+18: np.nan}).to_numpy(dtype=float)
+                    except Exception:
+                        arr = None
+                    entry['coord_cols'] = coord_cols
+                    entry['coords_arr'] = arr
+                else:
+                    entry['coord_cols'] = None
+                    entry['coords_arr'] = None
+
+                # extract resids and resnames if present
+                if 'ID' in coords.columns:
+                    resids = coords['ID'].astype(str).apply(lambda x: x.split('_')[-1]).tolist()
+                    entry['resids'] = resids
+                else:
+                    entry['resids'] = []
+                if 'resname' in coords.columns:
+                    entry['resnames'] = coords['resname'].astype(str).tolist()
+                else:
+                    entry['resnames'] = [''] * len(entry.get('resids', []))
+            else:
+                entry['coord_cols'] = None
+                entry['coords_arr'] = None
+                entry['resids'] = []
+                entry['resnames'] = []
+
+            # compute k-mer set for prefiltering
+            k = self.prefilter_k
+            seq_kmers = set()
+            if seq:
+                if len(seq) <= k:
+                    seq_kmers.add(seq)
+                else:
+                    for i in range(len(seq) - k + 1):
+                        seq_kmers.add(seq[i:i+k])
+            entry['kmer_set'] = seq_kmers
+
+            self.templates[tid] = entry
 
     def get(self, target_id: str) -> Dict[str, Any]:
         return self.templates.get(target_id)
@@ -44,8 +98,19 @@ class TemplateRepository:
 
         Returns list of (target_id, template_seq, score) sorted descending by score.
         """
-        cand: List[Tuple[str, str, float]] = []
         qlen = len(query_seq)
+        # build query k-mer set
+        k = self.prefilter_k
+        q_kmers = set()
+        if query_seq:
+            if len(query_seq) <= k:
+                q_kmers.add(query_seq)
+            else:
+                for i in range(len(query_seq) - k + 1):
+                    q_kmers.add(query_seq[i:i+k])
+
+        # compute simple overlap score for prefilter
+        candidates_overlap: List[Tuple[str, str, int]] = []
         for tid, info in self.templates.items():
             tpl_seq = info.get('seq', '')
             tlen = len(tpl_seq)
@@ -54,7 +119,22 @@ class TemplateRepository:
             ratio = tlen / max(1, qlen)
             if ratio < self.length_ratio_min or ratio > self.length_ratio_max:
                 continue
+            kset = info.get('kmer_set', set())
+            overlap = len(q_kmers & kset) if kset else 0
+            candidates_overlap.append((tid, tpl_seq, overlap))
+
+        if not candidates_overlap:
+            return []
+
+        # shortlist by overlap
+        candidates_overlap.sort(key=lambda x: x[2], reverse=True)
+        top_n = min(self.prefilter_top_n, len(candidates_overlap))
+        shortlisted = candidates_overlap[:top_n]
+
+        # compute expensive scorer only on shortlisted templates
+        scored: List[Tuple[str, str, float]] = []
+        for tid, tpl_seq, _ in shortlisted:
             score = scorer(query_seq, tpl_seq)
-            cand.append((tid, tpl_seq, float(score)))
-        cand.sort(key=lambda x: x[2], reverse=True)
-        return cand[:top_k]
+            scored.append((tid, tpl_seq, float(score)))
+        scored.sort(key=lambda x: x[2], reverse=True)
+        return scored[:top_k]
