@@ -221,7 +221,12 @@ class SubmissionGenerator:
                 zk = f'z_{si+1}'
                 val = structure_maps[si].get(str(qi)) if si < len(structure_maps) else None
                 if val:
-                    x, y, z, _ = val
+                    # mapping values may be (x,y,z,resname,t_idx) or similar; accept extra fields
+                    try:
+                        x, y, z, *rest = val
+                    except Exception:
+                        # unexpected format
+                        continue
                     row[xk] = x
                     row[yk] = y
                     row[zk] = z

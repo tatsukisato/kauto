@@ -7,7 +7,7 @@ from functools import partial
 import sys
 
 # generator-based worker (require this module to be present)
-from competitions.rna2.src.baseline.generator import init_pool_with_scorer as _init_pool_with_scorer, worker_process_query as _worker_process_query
+from baseline.generator import init_pool_with_scorer as _init_pool_with_scorer, worker_process_query as _worker_process_query
 
 # pure-Python fallback removed: PairwiseAligner is required for mapping
 
