@@ -11,3 +11,6 @@ wheels/
 
 # Experiment outputs
 output/
+
+# macOS system files
+.DS_Store
