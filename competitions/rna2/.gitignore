@@ -6,3 +6,4 @@ stanford-rna-3d-folding-2/
 *.csv
 *.json
 *.zip
+*.jsonl

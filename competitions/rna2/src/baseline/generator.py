@@ -26,6 +26,7 @@ class SubmissionGenerator:
     USE_KABSCH = False
     KABSCH_MIN_PAIRS = 3
     KABSCH_MIN_COVERAGE = 0.3
+    DIAGNOSTIC = False  # Enable diagnostic logging
 
     @classmethod
     def init_pool_with_scorer(cls, templates_serial, config, prefilter_k, prefilter_top_n, scorer: Callable):
@@ -60,6 +61,12 @@ class SubmissionGenerator:
             cls.KABSCH_MIN_PAIRS = 3
             cls.KABSCH_MIN_COVERAGE = 0.3
 
+        # Diagnostic flag
+        try:
+            cls.DIAGNOSTIC = config.get('diagnostic', False) if hasattr(config, 'get') else getattr(config, 'diagnostic', False)
+        except Exception:
+            cls.DIAGNOSTIC = False
+
     @classmethod
     def process_query(cls, qtuple):
         # qtuple: (qid, qseq, n_structures)
@@ -84,6 +91,20 @@ class SubmissionGenerator:
                     raise
 
         qid, qseq, n_structures = qtuple
+
+        # Initialize diagnostic log if enabled
+        diag = None
+        if cls.DIAGNOSTIC:
+            diag = {
+                'query_id': qid,
+                'query_length': len(qseq),
+                'template_id': None,
+                'seq_identity': None,
+                'used_local_align': False,
+                'kabsch_applied': False,
+                'raw_coverage': None,
+                'final_coverage': None,
+            }
         k = cls.PREFILTER_K
         q_kmers = set()
         if qseq:
@@ -119,6 +140,11 @@ class SubmissionGenerator:
             scored.append((tid, tpl_seq, sc, coord_cols, coords_arr, resnames))
         scored.sort(key=lambda x: x[2], reverse=True)
         best = scored[:n_structures]
+
+        # Record best template info in diagnostic log
+        if diag is not None and best:
+            diag['template_id'] = best[0][0]
+            diag['seq_identity'] = float(best[0][2]) if best[0][2] is not None else None
 
         rows = []
         structure_maps = []
@@ -172,6 +198,9 @@ class SubmissionGenerator:
                         for k, v in local_map.items():
                             if k not in resid_map:
                                 resid_map[k] = v
+                        # Record local align usage (only for first template)
+                        if diag is not None and len(structure_maps) == 0 and len(local_map) > 0:
+                            diag['used_local_align'] = True
             except Exception:
                 pass
 
@@ -202,10 +231,20 @@ class SubmissionGenerator:
                                     x, y, z = coords_arr[t_idx]
                                     resn = val[3]
                                     resid_map[key] = (x, y, z, resn, t_idx)
+                        # Record Kabsch usage
+                        if diag is not None:
+                            diag['kabsch_applied'] = True
             except Exception:
                 pass
 
             structure_maps.append(resid_map)
+
+        # Calculate coverage for diagnostic
+        if diag is not None and structure_maps:
+            first_map = structure_maps[0]
+            total_residues = len(qseq)
+            mapped_residues = sum(1 for qi in range(1, total_residues + 1) if str(qi) in first_map and not any(np.isnan(first_map[str(qi)][:3])))
+            diag['raw_coverage'] = mapped_residues / max(1, total_residues)
 
         for qi in range(1, len(qseq) + 1):
             if qseq[qi - 1] == '-':
@@ -235,7 +274,17 @@ class SubmissionGenerator:
                     row[yk] = np.nan
                     row[zk] = np.nan
             rows.append(row)
-        return rows
+
+        # Calculate final coverage (after gap filling would be applied later)
+        if diag is not None:
+            # For now, raw_coverage = final_coverage (gap filling happens in predict.py)
+            diag['final_coverage'] = diag['raw_coverage']
+
+        # Return rows and diagnostic log if enabled
+        if cls.DIAGNOSTIC:
+            return rows, diag
+        else:
+            return rows
 
 
 def init_pool_with_scorer(templates_serial, config, prefilter_k, prefilter_top_n, scorer):
