@@ -27,6 +27,10 @@ class SubmissionGenerator:
     KABSCH_MIN_PAIRS = 3
     KABSCH_MIN_COVERAGE = 0.3
     DIAGNOSTIC = False  # Enable diagnostic logging
+    # Phase 3a: Local alignment activation parameters
+    LARGE_SEQ_THRESHOLD = 500
+    FORCE_LOCAL_FOR_LARGE = True
+    MIN_COVERAGE_FOR_SKIP_LOCAL = 0.7
 
     @classmethod
     def init_pool_with_scorer(cls, templates_serial, config, prefilter_k, prefilter_top_n, scorer: Callable):
@@ -60,6 +64,16 @@ class SubmissionGenerator:
             cls.USE_KABSCH = False
             cls.KABSCH_MIN_PAIRS = 3
             cls.KABSCH_MIN_COVERAGE = 0.3
+
+        # Phase 3a: Local alignment activation parameters
+        try:
+            cls.LARGE_SEQ_THRESHOLD = config.get('large_seq_threshold', 500) if hasattr(config, 'get') else getattr(config, 'large_seq_threshold', 500)
+            cls.FORCE_LOCAL_FOR_LARGE = config.get('force_local_for_large', True) if hasattr(config, 'get') else getattr(config, 'force_local_for_large', True)
+            cls.MIN_COVERAGE_FOR_SKIP_LOCAL = config.get('min_coverage_for_skip_local', 0.7) if hasattr(config, 'get') else getattr(config, 'min_coverage_for_skip_local', 0.7)
+        except Exception:
+            cls.LARGE_SEQ_THRESHOLD = 500
+            cls.FORCE_LOCAL_FOR_LARGE = True
+            cls.MIN_COVERAGE_FOR_SKIP_LOCAL = 0.7
 
         # Diagnostic flag
         try:
@@ -104,6 +118,11 @@ class SubmissionGenerator:
                 'kabsch_applied': False,
                 'raw_coverage': None,
                 'final_coverage': None,
+                # Phase 3a: Enhanced diagnostic fields
+                'n_local_added': 0,
+                'coverage_before_local': None,
+                'coverage_after_local': None,
+                'local_trigger_reason': None,
             }
         k = cls.PREFILTER_K
         q_kmers = set()
@@ -178,14 +197,35 @@ class SubmissionGenerator:
             except Exception as exc:
                 raise RuntimeError("Bio.Align.PairwiseAligner is required for mapping; please install a recent Biopython") from exc
 
-            # local fallback
+            # local fallback (Phase 3a: enhanced triggering logic)
             try:
                 mapped_count = len(resid_map)
                 qlen = len(qseq)
                 use_local = False
-                if (score is not None and score < cls.GLOBAL_THRESHOLD) or mapped_count < max(1, int(0.05 * qlen)):
+                local_trigger_reason = None
+
+                # Condition 1: Low sequence identity
+                if score is not None and score < cls.GLOBAL_THRESHOLD:
                     use_local = True
+                    local_trigger_reason = 'low_identity'
+
+                # Condition 2: Low coverage after global alignment
+                coverage = mapped_count / max(1, qlen)
+                if coverage < cls.MIN_COVERAGE_FOR_SKIP_LOCAL:
+                    use_local = True
+                    local_trigger_reason = 'low_coverage'
+
+                # Condition 3: Force local for large sequences
+                if qlen >= cls.LARGE_SEQ_THRESHOLD and cls.FORCE_LOCAL_FOR_LARGE:
+                    use_local = True
+                    local_trigger_reason = 'large_sequence'
+
                 if use_local:
+                    # Record coverage before local alignment (for diagnostic)
+                    if diag is not None and len(structure_maps) == 0:
+                        diag['coverage_before_local'] = coverage
+                        diag['local_trigger_reason'] = local_trigger_reason
+
                     try:
                         from baseline.search import local_align_and_map as _local_map
                     except Exception:
@@ -195,12 +235,19 @@ class SubmissionGenerator:
                             _local_map = None
                     if _local_map is not None:
                         local_map = _local_map(qseq, tpl_seq, coords_arr, resnames, min_identity=cls.LOCAL_MIN_IDENTITY, min_length=cls.MIN_LOCAL_LENGTH)
+                        n_added = 0
                         for k, v in local_map.items():
                             if k not in resid_map:
                                 resid_map[k] = v
+                                n_added += 1
                         # Record local align usage (only for first template)
-                        if diag is not None and len(structure_maps) == 0 and len(local_map) > 0:
-                            diag['used_local_align'] = True
+                        if diag is not None and len(structure_maps) == 0:
+                            if len(local_map) > 0:
+                                diag['used_local_align'] = True
+                            diag['n_local_added'] = n_added
+                            # Coverage after local alignment
+                            new_coverage = len(resid_map) / max(1, qlen)
+                            diag['coverage_after_local'] = new_coverage
             except Exception:
                 pass
 
